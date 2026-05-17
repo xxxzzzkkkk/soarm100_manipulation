@@ -8,6 +8,10 @@ from launch_ros.substitutions import FindPackageShare
 
 
 def generate_launch_description():
+    x = LaunchConfiguration("x")
+    y = LaunchConfiguration("y")
+    z = LaunchConfiguration("z")
+    use_offset = LaunchConfiguration("use_offset")
     dx = LaunchConfiguration("dx")
     dy = LaunchConfiguration("dy")
     dz = LaunchConfiguration("dz")
@@ -38,6 +42,10 @@ def generate_launch_description():
             {
                 "robot_description": robot_description,
                 "ee_frame": ee_frame,
+                "x": x,
+                "y": y,
+                "z": z,
+                "use_offset": use_offset,
                 "dx": dx,
                 "dy": dy,
                 "dz": dz,
@@ -50,19 +58,39 @@ def generate_launch_description():
     return LaunchDescription(
         [
             DeclareLaunchArgument(
+                "x",
+                default_value="0.02",
+                description="Absolute target end-effector x position in meters.",
+            ),
+            DeclareLaunchArgument(
+                "y",
+                default_value="-0.3888",
+                description="Absolute target end-effector y position in meters.",
+            ),
+            DeclareLaunchArgument(
+                "z",
+                default_value="0.2368",
+                description="Absolute target end-effector z position in meters.",
+            ),
+            DeclareLaunchArgument(
+                "use_offset",
+                default_value="false",
+                description="Use dx/dy/dz as an offset from the current end-effector position.",
+            ),
+            DeclareLaunchArgument(
                 "dx",
                 default_value="0.03",
-                description="End-effector x offset in meters.",
+                description="End-effector x offset in meters when use_offset=true.",
             ),
             DeclareLaunchArgument(
                 "dy",
                 default_value="0.0",
-                description="End-effector y offset in meters.",
+                description="End-effector y offset in meters when use_offset=true.",
             ),
             DeclareLaunchArgument(
                 "dz",
                 default_value="0.0",
-                description="End-effector z offset in meters.",
+                description="End-effector z offset in meters when use_offset=true.",
             ),
             DeclareLaunchArgument(
                 "ee_frame",
