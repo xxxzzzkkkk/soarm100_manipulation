@@ -18,6 +18,8 @@ find_package(tf2_geometry_msgs REQUIRED)
 find_package(moveit_ros_planning_interface REQUIRED)
 find_package(rclcpp_action REQUIRED)
 find_package(control_msgs REQUIRED)
+find_package(pinocchio REQUIRED)
+
 
 set(THIS_PACKAGE_INCLUDE_DEPENDS
   rclcpp
@@ -31,6 +33,7 @@ set(THIS_PACKAGE_INCLUDE_DEPENDS
   tf2_geometry_msgs
   moveit_ros_planning_interface
   control_msgs
+  pinocchio
 )
 
 add_library(robot_interface
@@ -44,13 +47,31 @@ ament_target_dependencies(robot_interface
   ${THIS_PACKAGE_INCLUDE_DEPENDS}
 )
 
+add_library(motion_planner
+  src/motion_planner.cpp
+)
+target_include_directories(motion_planner PUBLIC
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+  $<INSTALL_INTERFACE:include>
+)
+ament_target_dependencies(motion_planner
+  ${THIS_PACKAGE_INCLUDE_DEPENDS}
+)
+
 add_executable(demo_move_to_pose
   src/demo_move_to_pose.cpp
 )
 target_link_libraries(demo_move_to_pose
-  robot_interface
+  motion_planner
 )
 ament_target_dependencies(demo_move_to_pose
+  ${THIS_PACKAGE_INCLUDE_DEPENDS}
+)
+
+add_executable(pinocchio_ik
+  src/pinocchio_ik.cpp
+)
+ament_target_dependencies(pinocchio_ik
   ${THIS_PACKAGE_INCLUDE_DEPENDS}
 )
 
@@ -60,7 +81,12 @@ install(
 )
 
 install(
-  TARGETS robot_interface
+  DIRECTORY launch/
+  DESTINATION share/${PROJECT_NAME}/launch
+)
+
+install(
+  TARGETS robot_interface motion_planner
   EXPORT export_robot_interface
   ARCHIVE DESTINATION lib
   LIBRARY DESTINATION lib
@@ -68,7 +94,7 @@ install(
 )
 
 install(
-  TARGETS demo_move_to_pose
+  TARGETS demo_move_to_pose pinocchio_ik
   DESTINATION lib/${PROJECT_NAME}
 )
 
