@@ -1,0 +1,200 @@
+hardware interface
+
+  command interfaces
+	  Elbow/effort [available] [unclaimed]
+	  Elbow/position [available] [claimed]
+	  Elbow/velocity [available] [unclaimed]
+	  Gripper/effort [available] [unclaimed]
+	  Gripper/position [available] [claimed]
+	  Gripper/velocity [available] [unclaimed]
+	  Shoulder_Pitch/effort [available] [unclaimed]
+	  Shoulder_Pitch/position [available] [claimed]
+	  Shoulder_Pitch/velocity [available] [unclaimed]
+	  Shoulder_Rotation/effort [available] [unclaimed]
+	  Shoulder_Rotation/position [available] [claimed]
+	  Shoulder_Rotation/velocity [available] [unclaimed]
+	  Wrist_Pitch/effort [available] [unclaimed]
+	  Wrist_Pitch/position [available] [claimed]
+	  Wrist_Pitch/velocity [available] [unclaimed]
+	  Wrist_Roll/effort [available] [unclaimed]
+	  Wrist_Roll/position [available] [claimed]
+	  Wrist_Roll/velocity [available] [unclaimed]
+
+  state interfaces
+  	Elbow/effort
+  	Elbow/position
+  	Elbow/velocity
+  	Gripper/effort
+  	Gripper/position
+  	Gripper/velocity
+  	Shoulder_Pitch/effort
+  	Shoulder_Pitch/position
+  	Shoulder_Pitch/velocity
+  	Shoulder_Rotation/effort
+  	Shoulder_Rotation/position
+  	Shoulder_Rotation/velocity
+  	Wrist_Pitch/effort
+  	Wrist_Pitch/position
+  	Wrist_Pitch/velocity
+  	Wrist_Roll/effort
+  	Wrist_Roll/position
+  	Wrist_Roll/velocity
+
+
+controllers
+
+  gripper_controller        parallel_gripper_action_controller/GripperActionController  active  
+  arm_controller            joint_trajectory_controller/JointTrajectoryController       active  
+  arm_effort_controller     joint_trajectory_controller/JointTrajectoryController       inactive
+  effort_controller         effort_controllers/JointGroupEffortController               inactive
+  gripper_effort_controller position_controllers/JointGroupPositionController           inactive
+  joint_state_broadcaster   joint_state_broadcaster/JointStateBroadcaster               active  
+
+action servers
+
+  /arm_controller/follow_joint_trajectory
+  /arm_effort_controller/follow_joint_trajectory
+  /gripper_controller/gripper_cmd
+
+topics
+
+  /arm_controller/controller_state
+  /arm_controller/joint_trajectory
+  /arm_controller/speed_scaling_input
+  /arm_controller/transition_event
+  /arm_effort_controller/controller_state
+  /arm_effort_controller/joint_trajectory
+  /arm_effort_controller/transition_event
+  /command
+  /controller_manager/activity
+  /controller_manager/introspection_data/full
+  /controller_manager/introspection_data/names
+  /controller_manager/introspection_data/values
+  /controller_manager/statistics/full
+  /controller_manager/statistics/names
+  /controller_manager/statistics/values
+  /diagnostics
+  /dynamic_joint_states
+  /effort_controller/commands
+  /effort_controller/transition_event
+  /feedback
+  /gripper_controller/transition_event
+  /gripper_effort_controller/commands
+  /gripper_effort_controller/transition_event
+  /joint_state_broadcaster/transition_event
+  /joint_states
+  /parameter_events
+  /robot_description
+  /rosout
+  /tf
+  /tf_static
+
+services
+
+  /arm_controller/describe_parameters
+  /arm_controller/get_logger_levels
+  /arm_controller/get_parameter_types
+  /arm_controller/get_parameters
+  /arm_controller/get_type_description
+  /arm_controller/list_parameters
+  /arm_controller/query_state
+  /arm_controller/set_logger_levels
+  /arm_controller/set_parameters
+  /arm_controller/set_parameters_atomically
+  /arm_effort_controller/describe_parameters
+  /arm_effort_controller/get_logger_levels
+  /arm_effort_controller/get_parameter_types
+  /arm_effort_controller/get_parameters
+  /arm_effort_controller/get_type_description
+  /arm_effort_controller/list_parameters
+  /arm_effort_controller/query_state
+  /arm_effort_controller/set_logger_levels
+  /arm_effort_controller/set_parameters
+  /arm_effort_controller/set_parameters_atomically
+  /controller_manager/cleanup_controller
+  /controller_manager/configure_controller
+  /controller_manager/describe_parameters
+  /controller_manager/get_logger_levels
+  /controller_manager/get_parameter_types
+  /controller_manager/get_parameters
+  /controller_manager/get_type_description
+  /controller_manager/list_controller_types
+  /controller_manager/list_controllers
+  /controller_manager/list_hardware_components
+  /controller_manager/list_hardware_interfaces
+  /controller_manager/list_parameters
+  /controller_manager/load_controller
+  /controller_manager/reload_controller_libraries
+  /controller_manager/set_hardware_component_state
+  /controller_manager/set_logger_levels
+  /controller_manager/set_parameters
+  /controller_manager/set_parameters_atomically
+  /controller_manager/switch_controller
+  /controller_manager/unload_controller
+  /effort_controller/describe_parameters
+  /effort_controller/get_logger_levels
+  /effort_controller/get_parameter_types
+  /effort_controller/get_parameters
+  /effort_controller/get_type_description
+  /effort_controller/list_parameters
+  /effort_controller/set_logger_levels
+  /effort_controller/set_parameters
+  /effort_controller/set_parameters_atomically
+  /gripper_controller/describe_parameters
+  /gripper_controller/get_logger_levels
+  /gripper_controller/get_parameter_types
+  /gripper_controller/get_parameters
+  /gripper_controller/get_type_description
+  /gripper_controller/list_parameters
+  /gripper_controller/set_logger_levels
+  /gripper_controller/set_parameters
+  /gripper_controller/set_parameters_atomically
+  /gripper_effort_controller/describe_parameters
+  /gripper_effort_controller/get_logger_levels
+  /gripper_effort_controller/get_parameter_types
+  /gripper_effort_controller/get_parameters
+  /gripper_effort_controller/get_type_description
+  /gripper_effort_controller/list_parameters
+  /gripper_effort_controller/set_logger_levels
+  /gripper_effort_controller/set_parameters
+  /gripper_effort_controller/set_parameters_atomically
+  /joint_state_broadcaster/describe_parameters
+  /joint_state_broadcaster/get_logger_levels
+  /joint_state_broadcaster/get_parameter_types
+  /joint_state_broadcaster/get_parameters
+  /joint_state_broadcaster/get_type_description
+  /joint_state_broadcaster/list_parameters
+  /joint_state_broadcaster/set_logger_levels
+  /joint_state_broadcaster/set_parameters
+  /joint_state_broadcaster/set_parameters_atomically
+  /record_position
+  /robot_state_publisher/describe_parameters
+  /robot_state_publisher/get_parameter_types
+  /robot_state_publisher/get_parameters
+  /robot_state_publisher/get_type_description
+  /robot_state_publisher/list_parameters
+  /robot_state_publisher/set_parameters
+  /robot_state_publisher/set_parameters_atomically
+  /so_arm_100_driver/describe_parameters
+  /so_arm_100_driver/get_parameter_types
+  /so_arm_100_driver/get_parameters
+  /so_arm_100_driver/get_type_description
+  /so_arm_100_driver/list_parameters
+  /so_arm_100_driver/set_parameters
+  /so_arm_100_driver/set_parameters_atomically
+  /soarm100system/describe_parameters
+  /soarm100system/get_logger_levels
+  /soarm100system/get_parameter_types
+  /soarm100system/get_parameters
+  /soarm100system/get_type_description
+  /soarm100system/list_parameters
+  /soarm100system/set_logger_levels
+  /soarm100system/set_parameters
+  /soarm100system/set_parameters_atomically
+  /toggle_torque
+  
+  
+  
+  
+  
+  
