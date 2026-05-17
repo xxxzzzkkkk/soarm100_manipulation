@@ -97,7 +97,7 @@ kinematics pipeline.
 I intentionally solve **position-only IK** here:
 
 ```text
-target xyz = current end-effector xyz + dx/dy/dz
+target xyz = x/y/z
 ```
 
 I do not solve full 6D position + orientation IK in this node because the
@@ -122,7 +122,7 @@ The internal sequence is:
 load URDF into Pinocchio Model
 read /joint_states as the initial q
 compute current end-effector frame position
-target position = current position + dx/dy/dz
+target position = x/y/z
 iterate FK -> position error -> frame Jacobian -> damped least-squares dq
 optionally send the solved 5 arm joint positions to /arm_controller/follow_joint_trajectory
 ```
@@ -132,14 +132,20 @@ First run it without moving the robot:
 ```bash
 source /opt/ros/jazzy/setup.bash
 source ~/ros2_ws/install/setup.bash
-ros2 launch soarm100_manipulation pinocchio_ik.launch.py dx:=0.02 dy:=0.0 dz:=0.0
+ros2 launch soarm100_manipulation pinocchio_ik.launch.py x:=0.02 y:=-0.3888 z:=0.2368
 ```
 
 To execute the solved joint target, start Gazebo or the real ros2_control stack
 first, then run:
 
 ```bash
-ros2 launch soarm100_manipulation pinocchio_ik.launch.py dx:=0.02 execute:=true
+ros2 launch soarm100_manipulation pinocchio_ik.launch.py x:=0.02 y:=-0.3888 z:=0.2368 execute:=true
+```
+
+For quick relative-motion tests, I kept an offset mode:
+
+```bash
+ros2 launch soarm100_manipulation pinocchio_ik.launch.py use_offset:=true dx:=0.02 execute:=true
 ```
 
 For this controller test, Gazebo is the better target than plain RViz. RViz is
@@ -227,7 +233,7 @@ Then run:
 ```bash
 source /opt/ros/jazzy/setup.bash
 source ~/ros2_ws/install/setup.bash
-ros2 launch soarm100_manipulation pinocchio_ik.launch.py dx:=0.02 execute:=true
+ros2 launch soarm100_manipulation pinocchio_ik.launch.py x:=0.02 y:=-0.3888 z:=0.2368 execute:=true
 ```
 
 Expected success markers:

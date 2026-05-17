@@ -1,12 +1,8 @@
-#include <algorithm>
 #include <chrono>
 #include <cmath>
-#include <limits>
 #include <memory>
 #include <optional>
-#include <stdexcept>
 #include <string>
-#include <unordered_map>
 #include <vector>
 
 #include "builtin_interfaces/msg/duration.hpp"
@@ -14,27 +10,14 @@
 #include "rclcpp/rclcpp.hpp"
 #include "rclcpp_action/rclcpp_action.hpp"
 #include "sensor_msgs/msg/joint_state.hpp"
+#include "soarm100_manipulation/pinocchio_ik_solver.hpp"
 #include "trajectory_msgs/msg/joint_trajectory_point.hpp"
-
-#include "pinocchio/algorithm/frames.hpp"
-#include "pinocchio/algorithm/jacobian.hpp"
-#include "pinocchio/algorithm/joint-configuration.hpp"
-#include "pinocchio/algorithm/kinematics.hpp"
-#include "pinocchio/parsers/urdf.hpp"
 
 namespace
 {
 
 using Clock = std::chrono::steady_clock;
 using FollowJointTrajectory = control_msgs::action::FollowJointTrajectory;
-
-const std::vector<std::string> kArmJointNames = {
-  "Shoulder_Rotation",
-  "Shoulder_Pitch",
-  "Elbow",
-  "Wrist_Pitch",
-  "Wrist_Roll",
-};
 
 builtin_interfaces::msg::Duration secondsToDurationMsg(double seconds)
 {
@@ -44,11 +27,7 @@ builtin_interfaces::msg::Duration secondsToDurationMsg(double seconds)
   return msg;
 }
 
-// 我先等一帧 /joint_states。
-//
-// IK 需要一个初始关节角 q。我最希望用机械臂当前真实/仿真的关节角，
-// 因为数值 IK 从当前状态附近开始迭代，一般更容易收敛。
-// 如果我等不到 /joint_states，后面就退回到 Pinocchio 的 neutral configuration。
+// 我先等一帧 /joint_states，尽量用 Gazebo/真机当前关节角作为 IK 初值。
 std::optional<sensor_msgs::msg::JointState> waitForJointState(
   const rclcpp::Node::SharedPtr & node,
   std::chrono::milliseconds timeout)
@@ -68,181 +47,10 @@ std::optional<sensor_msgs::msg::JointState> waitForJointState(
   return latest;
 }
 
-Eigen::VectorXd makeInitialConfiguration(
-  const pinocchio::Model & model,
-  const std::optional<sensor_msgs::msg::JointState> & joint_state)
-{
-  // 我把 q 当成“广义位置向量”，也就是 Pinocchio 表示机器人姿态的一整串数字。
-  // 对 SO-ARM100 这种全 revolute 机械臂来说，可以简单理解成：
-  //   q = [Shoulder_Rotation, Shoulder_Pitch, Elbow, Wrist_Pitch, Wrist_Roll, Gripper]
-  //
-  // 更复杂的机器人可能有 floating base、四元数关节等，所以 Pinocchio
-  // 不建议我手写 q 的长度和排列，而是从 model 里读取。
-  Eigen::VectorXd q = pinocchio::neutral(model);
-  if (!joint_state)
-  {
-    return q;
-  }
-
-  // /joint_states 里是 name[] 和 position[] 两个数组。
-  // 我先转成 map，方便按关节名字查角度，避免依赖 ROS 消息里的顺序。
-  std::unordered_map<std::string, double> positions;
-  for (std::size_t i = 0; i < joint_state->name.size() && i < joint_state->position.size(); ++i)
-  {
-    positions[joint_state->name[i]] = joint_state->position[i];
-  }
-
-  // model.joints[0] 是 universe，不是真实关节，所以我从 1 开始。
-  for (pinocchio::JointIndex joint_id = 1; joint_id < model.joints.size(); ++joint_id)
-  {
-    const auto it = positions.find(model.names[joint_id]);
-    if (it == positions.end())
-    {
-      continue;
-    }
-
-    // 我用 idx_q 找这个关节在 q 向量里的起始下标。
-    // nq()==1 表示这个关节只占 q 里的一个数；revolute/prismatic 都是这样。
-    const int idx_q = model.joints[joint_id].idx_q();
-    if (idx_q >= 0 && model.joints[joint_id].nq() == 1)
-    {
-      q[idx_q] = it->second;
-    }
-  }
-
-  return q;
-}
-
-std::vector<double> extractArmPositions(const pinocchio::Model & model, const Eigen::VectorXd & q)
-{
-  std::vector<double> positions;
-  positions.reserve(kArmJointNames.size());
-
-  for (const auto & joint_name : kArmJointNames)
-  {
-    if (!model.existJointName(joint_name))
-    {
-      throw std::runtime_error("Pinocchio model does not contain joint `" + joint_name + "`");
-    }
-
-    const auto joint_id = model.getJointId(joint_name);
-    const int idx_q = model.joints[joint_id].idx_q();
-    if (idx_q < 0 || model.joints[joint_id].nq() != 1)
-    {
-      throw std::runtime_error("Joint `" + joint_name + "` is not a 1-DoF joint");
-    }
-    positions.push_back(q[idx_q]);
-  }
-
-  return positions;
-}
-
-void clampToPositionLimits(const pinocchio::Model & model, Eigen::VectorXd & q)
-{
-  // 数值 IK 每一步都会更新 q，可能会把关节推到 URDF limit 外。
-  // 我这里先做一个最朴素的限位裁剪，保证结果不会明显越界。
-  for (int i = 0; i < q.size(); ++i)
-  {
-    const double lower = model.lowerPositionLimit[i];
-    const double upper = model.upperPositionLimit[i];
-    if (std::isfinite(lower) && std::isfinite(upper) && lower < upper)
-    {
-      q[i] = std::clamp(q[i], lower, upper);
-    }
-  }
-}
-
-bool solvePositionIk(
-  const pinocchio::Model & model,
-  pinocchio::Data & data,
-  const pinocchio::FrameIndex ee_frame_id,
-  const Eigen::Vector3d & target_position,
-  Eigen::VectorXd & q,
-  const int max_iterations,
-  const double tolerance,
-  const double damping,
-  const double step_size,
-  rclcpp::Logger logger)
-{
-  // 我这里写的是“只跟踪末端位置”的迭代 IK：
-  //
-  // 1. 我用当前 q 做 FK，得到末端当前位置 x(q)
-  // 2. 我算位置误差 e = target - x(q)
-  // 3. 我用 Jacobian 建立近似关系：dx = J * dq
-  // 4. 我反过来求一个 dq，让末端往误差变小的方向走
-  // 5. 我更新 q，然后重复
-  //
-  // 我不在这里硬解姿态，因为 SO-ARM100 手臂本体只有 5 DoF。
-  // 末端完整位姿是 6D 任务，普通情况下会过约束；这个学习版先把位置 IK 做稳。
-  for (int iter = 0; iter < max_iterations; ++iter)
-  {
-    // 我先调用 forwardKinematics，让 Pinocchio 更新每个 joint 的位姿。
-    // 再调用 updateFramePlacements，让每个 frame 的位姿也刷新。
-    // URDF 里的 link/joint/末端工具点，我通常都以 frame 的形式取出来。
-    pinocchio::forwardKinematics(model, data, q);
-    pinocchio::updateFramePlacements(model, data);
-
-    // 我从 data.oMf[frame_id] 里读 frame 相对于 world/origin(o) 的 SE3 位姿。
-    // 我只取 translation()，所以这个 IK 只关心末端 xyz，不硬约束姿态。
-    const Eigen::Vector3d current_position = data.oMf[ee_frame_id].translation();
-    const Eigen::Vector3d error = target_position - current_position;
-    if (error.norm() < tolerance)
-    {
-      RCLCPP_INFO(logger, "IK converged in %d iterations, error=%.6f m", iter, error.norm());
-      return true;
-    }
-
-    // 我用 Jacobian 描述“关节速度 -> 末端空间速度”的线性近似关系。
-    // full_jacobian 是 6 x nv：
-    //   前 3 行：线速度部分 vx, vy, vz
-    //   后 3 行：角速度部分 wx, wy, wz
-    pinocchio::computeJointJacobians(model, data, q);
-    Eigen::Matrix<double, 6, Eigen::Dynamic> full_jacobian(6, model.nv);
-    full_jacobian.setZero();
-    pinocchio::getFrameJacobian(
-      model,
-      data,
-      ee_frame_id,
-      pinocchio::LOCAL_WORLD_ALIGNED,
-      full_jacobian);
-
-    // 我只解位置 IK，所以只使用 Jacobian 的前三行，也就是线速度部分。
-    const Eigen::MatrixXd linear_jacobian = full_jacobian.topRows(3);
-
-    // 我这里用阻尼最小二乘 DLS：
-    //
-    // 如果用普通伪逆，可以写成：
-    //   dq = J^T * (J * J^T)^-1 * error
-    //
-    // 但靠近奇异位形时，J * J^T 可能很难求逆，dq 会突然变得很大。
-    // 所以我加一个 damping^2 * I：
-    //   dq = J^T * (J * J^T + lambda^2 * I)^-1 * error
-    //
-    // 我把 lambda 调大一点会更稳，但动作更保守；调小一点更灵敏，但更怕奇异点。
-    const Eigen::Matrix3d task_matrix =
-      linear_jacobian * linear_jacobian.transpose() +
-      damping * damping * Eigen::Matrix3d::Identity();
-    const Eigen::VectorXd dq = linear_jacobian.transpose() * task_matrix.ldlt().solve(error);
-
-    // 我用 integrate，而不是直接 q += dq，因为 integrate 更通用。
-    // 对普通 revolute 关节效果接近相加；对四元数/floating base 这类配置，
-    // integrate 会用正确的流形方式更新。
-    //
-    // 我用 step_size 控制步长，防止每次走得太猛导致震荡。
-    q = pinocchio::integrate(model, q, step_size * dq);
-    clampToPositionLimits(model, q);
-  }
-
-  pinocchio::forwardKinematics(model, data, q);
-  pinocchio::updateFramePlacements(model, data);
-  const double final_error = (target_position - data.oMf[ee_frame_id].translation()).norm();
-  RCLCPP_WARN(logger, "IK did not converge, final error=%.6f m", final_error);
-  return false;
-}
-
 bool sendArmTrajectory(
   const rclcpp::Node::SharedPtr & node,
   const std::string & action_name,
+  const std::vector<std::string> & joint_names,
   const std::vector<double> & positions,
   const double duration_sec,
   const double server_timeout_sec)
@@ -258,7 +66,7 @@ bool sendArmTrajectory(
   }
 
   FollowJointTrajectory::Goal goal;
-  goal.trajectory.joint_names = kArmJointNames;
+  goal.trajectory.joint_names = joint_names;
 
   trajectory_msgs::msg::JointTrajectoryPoint target_point;
   target_point.positions = positions;
@@ -314,9 +122,18 @@ int main(int argc, char ** argv)
 
   const auto robot_description = node->declare_parameter<std::string>("robot_description", "");
   const auto ee_frame = node->declare_parameter<std::string>("ee_frame", "End_Effector");
+
+  // 默认我使用绝对 xyz 目标。比如 x:=0.02 y:=-0.38 z:=0.24。
+  const auto x = node->declare_parameter<double>("x", 0.02);
+  const auto y = node->declare_parameter<double>("y", -0.3888);
+  const auto z = node->declare_parameter<double>("z", 0.2368);
+
+  // use_offset 是给调试留的：true 时继续用 dx/dy/dz 表示从当前末端位置偏移。
+  const auto use_offset = node->declare_parameter<bool>("use_offset", false);
   const auto dx = node->declare_parameter<double>("dx", 0.03);
   const auto dy = node->declare_parameter<double>("dy", 0.0);
   const auto dz = node->declare_parameter<double>("dz", 0.0);
+
   const auto execute = node->declare_parameter<bool>("execute", false);
   const auto trajectory_duration =
     node->declare_parameter<double>("trajectory_duration", 3.0);
@@ -326,10 +143,12 @@ int main(int argc, char ** argv)
     node->declare_parameter<double>("controller_timeout", 5.0);
   const auto joint_state_timeout =
     node->declare_parameter<double>("joint_state_timeout", 2.0);
-  const auto max_iterations = node->declare_parameter<int>("max_iterations", 100);
-  const auto tolerance = node->declare_parameter<double>("tolerance", 1e-4);
-  const auto damping = node->declare_parameter<double>("damping", 1e-3);
-  const auto step_size = node->declare_parameter<double>("step_size", 0.4);
+
+  soarm100_manipulation::PositionIkOptions ik_options;
+  ik_options.max_iterations = node->declare_parameter<int>("max_iterations", 100);
+  ik_options.tolerance = node->declare_parameter<double>("tolerance", 1e-4);
+  ik_options.damping = node->declare_parameter<double>("damping", 1e-3);
+  ik_options.step_size = node->declare_parameter<double>("step_size", 0.4);
 
   if (robot_description.empty())
   {
@@ -338,43 +157,27 @@ int main(int argc, char ** argv)
     return 1;
   }
 
-  // 我把 Model 当作机器人“不随 q 改变”的结构信息：
-  // 关节树、关节名字、limit、每个关节的自由度、frame 列表等。
-  //
-  // 我把 Data 当作计算缓存：
-  // FK/Jacobian/动力学计算出来的中间结果都会放在这里。
-  // 常见写法就是：Model 创建一次，Data 跟着 Model 创建，然后反复复用。
-  pinocchio::Model model;
+  std::unique_ptr<soarm100_manipulation::PinocchioIkSolver> solver;
   try
   {
-    // launch 文件把 xacro 展开的 URDF XML 字符串放进 robot_description。
-    // 我让 Pinocchio 从 URDF 里解析出运动学模型。
-    pinocchio::urdf::buildModelFromXML(robot_description, model);
+    solver = std::make_unique<soarm100_manipulation::PinocchioIkSolver>(
+      robot_description,
+      ee_frame);
   }
   catch (const std::exception & ex)
   {
-    RCLCPP_ERROR(logger, "Failed to build Pinocchio model from URDF: %s", ex.what());
-    rclcpp::shutdown();
-    return 1;
-  }
-  pinocchio::Data data(model);
-
-  // ee_frame 是我要控制的末端坐标系。
-  // 当前 launch 默认用 URDF 里的 End_Effector frame。
-  if (!model.existFrame(ee_frame))
-  {
-    RCLCPP_ERROR(logger, "Frame `%s` was not found in the Pinocchio model.", ee_frame.c_str());
-    RCLCPP_INFO(logger, "Available frames:");
-    for (const auto & frame : model.frames)
-    {
-      RCLCPP_INFO(logger, "  %s", frame.name.c_str());
-    }
+    RCLCPP_ERROR(logger, "Failed to initialize Pinocchio IK solver: %s", ex.what());
     rclcpp::shutdown();
     return 1;
   }
 
-  RCLCPP_INFO(logger, "Pinocchio model: nq=%d nv=%d joints=%zu", model.nq, model.nv, model.names.size());
-  RCLCPP_INFO(logger, "End-effector frame: %s", ee_frame.c_str());
+  RCLCPP_INFO(
+    logger,
+    "Pinocchio model: nq=%d nv=%d joints=%zu",
+    solver->model().nq,
+    solver->model().nv,
+    solver->model().names.size());
+  RCLCPP_INFO(logger, "End-effector frame: %s", solver->eeFrameName().c_str());
 
   const auto joint_state = waitForJointState(
     node,
@@ -384,19 +187,15 @@ int main(int argc, char ** argv)
     RCLCPP_WARN(logger, "No /joint_states received; using Pinocchio neutral configuration.");
   }
 
-  // 我把 q 作为 IK 的起点。初值越接近目标附近，数值 IK 通常越容易收敛。
-  Eigen::VectorXd q = makeInitialConfiguration(model, joint_state);
+  // 我把当前 q 作为 IK 起点。初值越接近目标附近，数值 IK 通常越容易收敛。
+  Eigen::VectorXd q = solver->makeInitialConfiguration(joint_state ? &(*joint_state) : nullptr);
+  const Eigen::Vector3d start_position = solver->endEffectorPosition(q);
 
-  // 我先做一次 FK，拿到当前末端位置。
-  pinocchio::forwardKinematics(model, data, q);
-  pinocchio::updateFramePlacements(model, data);
-
-  const auto ee_frame_id = model.getFrameId(ee_frame);
-  const Eigen::Vector3d start_position = data.oMf[ee_frame_id].translation();
-
-  // 我这个例子不直接输入绝对目标点，而是从当前位置偏移 dx/dy/dz。
-  // 例如 dx:=0.03 就是让末端在 world x 方向移动 3cm。
-  const Eigen::Vector3d target_position = start_position + Eigen::Vector3d(dx, dy, dz);
+  Eigen::Vector3d target_position(x, y, z);
+  if (use_offset)
+  {
+    target_position = start_position + Eigen::Vector3d(dx, dy, dz);
+  }
 
   RCLCPP_INFO(
     logger,
@@ -410,34 +209,35 @@ int main(int argc, char ** argv)
     target_position.x(),
     target_position.y(),
     target_position.z());
-  const bool ok = solvePositionIk(
-    model,
-    data,
-    ee_frame_id,
-    target_position,
-    q,
-    max_iterations,
-    tolerance,
-    damping,
-    step_size,
-    logger);
 
-  RCLCPP_INFO(logger, "Solved joint configuration:");
-  for (pinocchio::JointIndex joint_id = 1; joint_id < model.joints.size(); ++joint_id)
+  const auto result = solver->solvePosition(target_position, q, ik_options);
+  if (result.success)
   {
-    const int idx_q = model.joints[joint_id].idx_q();
-    if (idx_q >= 0 && model.joints[joint_id].nq() == 1)
-    {
-      RCLCPP_INFO(logger, "  %s = %.6f rad", model.names[joint_id].c_str(), q[idx_q]);
-    }
+    RCLCPP_INFO(
+      logger,
+      "IK converged in %d iterations, error=%.6f m",
+      result.iterations,
+      result.final_error);
+  }
+  else
+  {
+    RCLCPP_WARN(logger, "IK did not converge, final error=%.6f m", result.final_error);
   }
 
-  if (ok && execute)
+  RCLCPP_INFO(logger, "Solved arm joint configuration:");
+  const auto arm_positions = solver->extractArmPositions(result.q);
+  const auto & arm_joint_names = solver->armJointNames();
+  for (std::size_t i = 0; i < arm_joint_names.size(); ++i)
   {
-    const auto arm_positions = extractArmPositions(model, q);
+    RCLCPP_INFO(logger, "  %s = %.6f rad", arm_joint_names[i].c_str(), arm_positions[i]);
+  }
+
+  if (result.success && execute)
+  {
     const bool executed = sendArmTrajectory(
       node,
       action_name,
+      arm_joint_names,
       arm_positions,
       trajectory_duration,
       controller_timeout);
@@ -451,5 +251,5 @@ int main(int argc, char ** argv)
   }
 
   rclcpp::shutdown();
-  return ok ? 0 : 2;
+  return result.success ? 0 : 2;
 }
