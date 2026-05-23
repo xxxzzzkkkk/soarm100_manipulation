@@ -3,24 +3,26 @@
 <package format="3">
   <name>soarm100_manipulation</name>
   <version>0.0.0</version>
-  <description>TODO: Package description</description>
+  <description>SO-ARM100 manipulation utilities, Pinocchio IK, and Xbox teleoperation.</description>
   <maintainer email="parallels@todo.todo">parallels</maintainer>
   <license>TODO: License declaration</license>
 
   <buildtool_depend>ament_cmake</buildtool_depend>
 
   <depend>rclcpp</depend>
+  <depend>joy</depend>
   <depend>sensor_msgs</depend>
-  <depend>geometry_msgs</depend>
   <depend>trajectory_msgs</depend>
-  <depend>std_srvs</depend>
-  <depend>tf2</depend>
-  <depend>tf2_ros</depend>
-  <depend>tf2_geometry_msgs</depend>
-  <depend>moveit_ros_planning_interface</depend>
   <depend>rclcpp_action</depend>
   <depend>control_msgs</depend>
-
+  <depend>pinocchio</depend>
+  <build_depend>eigen</build_depend>
+  <build_export_depend>eigen</build_export_depend>
+  <exec_depend>robot_state_publisher</exec_depend>
+  <exec_depend>rviz2</exec_depend>
+  <exec_depend>so_arm_100_bringup</exec_depend>
+  <exec_depend>so_arm_100_description</exec_depend>
+  <exec_depend>xacro</exec_depend>
 
   <test_depend>ament_lint_auto</test_depend>
   <test_depend>ament_lint_common</test_depend>

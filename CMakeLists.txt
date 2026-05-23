@@ -9,29 +9,18 @@ endif()
 find_package(ament_cmake REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(sensor_msgs REQUIRED)
-find_package(geometry_msgs REQUIRED)
 find_package(trajectory_msgs REQUIRED)
-find_package(std_srvs REQUIRED)
-find_package(tf2 REQUIRED)
-find_package(tf2_ros REQUIRED)
-find_package(tf2_geometry_msgs REQUIRED)
-find_package(moveit_ros_planning_interface REQUIRED)
 find_package(rclcpp_action REQUIRED)
 find_package(control_msgs REQUIRED)
 find_package(pinocchio REQUIRED)
+find_package(Eigen3 REQUIRED)
 
 
 set(THIS_PACKAGE_INCLUDE_DEPENDS
   rclcpp
   rclcpp_action
   sensor_msgs
-  geometry_msgs
   trajectory_msgs
-  std_srvs
-  tf2
-  tf2_ros
-  tf2_geometry_msgs
-  moveit_ros_planning_interface
   control_msgs
   pinocchio
 )
@@ -47,31 +36,51 @@ ament_target_dependencies(robot_interface
   ${THIS_PACKAGE_INCLUDE_DEPENDS}
 )
 
-add_library(motion_planner
-  src/motion_planner.cpp
+add_library(pinocchio_ik_solver
+  src/pinocchio_ik_solver.cpp
 )
-target_include_directories(motion_planner PUBLIC
+target_include_directories(pinocchio_ik_solver PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
   $<INSTALL_INTERFACE:include>
 )
-ament_target_dependencies(motion_planner
+ament_target_dependencies(pinocchio_ik_solver
   ${THIS_PACKAGE_INCLUDE_DEPENDS}
 )
+target_link_libraries(pinocchio_ik_solver
+  Eigen3::Eigen
+)
 
-add_executable(demo_move_to_pose
-  src/demo_move_to_pose.cpp
+add_library(xbox_joint_teleop_lib
+  src/xbox_joint_teleop.cpp
 )
-target_link_libraries(demo_move_to_pose
-  motion_planner
+target_include_directories(xbox_joint_teleop_lib PUBLIC
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+  $<INSTALL_INTERFACE:include>
 )
-ament_target_dependencies(demo_move_to_pose
+ament_target_dependencies(xbox_joint_teleop_lib
   ${THIS_PACKAGE_INCLUDE_DEPENDS}
 )
 
 add_executable(pinocchio_ik
   src/pinocchio_ik.cpp
 )
+target_include_directories(pinocchio_ik PRIVATE
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+)
+target_link_libraries(pinocchio_ik
+  pinocchio_ik_solver
+)
 ament_target_dependencies(pinocchio_ik
+  ${THIS_PACKAGE_INCLUDE_DEPENDS}
+)
+
+add_executable(xbox_joint_teleop
+  src/xbox_joint_teleop_node.cpp
+)
+target_link_libraries(xbox_joint_teleop
+  xbox_joint_teleop_lib
+)
+ament_target_dependencies(xbox_joint_teleop
   ${THIS_PACKAGE_INCLUDE_DEPENDS}
 )
 
@@ -86,7 +95,7 @@ install(
 )
 
 install(
-  TARGETS robot_interface motion_planner
+  TARGETS robot_interface pinocchio_ik_solver xbox_joint_teleop_lib
   EXPORT export_robot_interface
   ARCHIVE DESTINATION lib
   LIBRARY DESTINATION lib
@@ -94,7 +103,7 @@ install(
 )
 
 install(
-  TARGETS demo_move_to_pose pinocchio_ik
+  TARGETS pinocchio_ik xbox_joint_teleop
   DESTINATION lib/${PROJECT_NAME}
 )
 
